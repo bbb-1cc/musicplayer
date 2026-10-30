@@ -15,3 +15,5 @@ object RetrofitClient {
             .create(ApiService::class.java)
     }
 }
+
+//已完成Retrofit封装与在线拉取
