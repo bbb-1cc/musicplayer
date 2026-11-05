@@ -83,6 +83,10 @@ class PlaylistFragment : Fragment() {
                         val songData = songList[0]
                         requireActivity().runOnUiThread {
                             binding.tvTitle.text = "${songData.name} - ${songData.artist}"
+
+                            // 🌟 新增：将数据存入 SharedPreferences，为小组件做准备
+                            SpUtils.saveCurrentSong(requireContext(), songData.name, songData.artist, songData.pic)
+                            SpUtils.savePlayState(requireContext(), true) // 假设拿到歌就准备播放了
                         }
                     } else {
                         showLocalFallbackData("服务器返回空数据降级")
