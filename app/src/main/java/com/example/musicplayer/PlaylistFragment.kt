@@ -80,13 +80,20 @@ class PlaylistFragment : Fragment() {
                 if (response.isSuccessful) {
                     val songList = response.body()
                     if (!songList.isNullOrEmpty()) {
-                        val songData = songList[0]
-                        requireActivity().runOnUiThread {
-                            binding.tvTitle.text = "${songData.name} - ${songData.artist}"
+                        // 🌟 新增：将拉取到的歌曲列表塞进队列管理器
+                        QueueManager.setQueue(songList, 0)
 
-                            // 🌟 新增：将数据存入 SharedPreferences，为小组件做准备
-                            SpUtils.saveCurrentSong(requireContext(), songData.name, songData.artist, songData.pic)
-                            SpUtils.savePlayState(requireContext(), true) // 假设拿到歌就准备播放了
+                        // 获取队列管理器返回的第一首歌
+                        val songData = QueueManager.getCurrentSong()
+
+                        if (songData != null) {
+                            requireActivity().runOnUiThread {
+                                binding.tvTitle.text = "${songData.name} - ${songData.artist}"
+
+                                // 存入 SP
+                                SpUtils.saveCurrentSong(requireContext(), songData.name, songData.artist, songData.pic)
+                                SpUtils.savePlayState(requireContext(), true)
+                            }
                         }
                     } else {
                         showLocalFallbackData("服务器返回空数据降级")
