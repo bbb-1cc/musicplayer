@@ -1,6 +1,7 @@
 package com.example.musicplayer
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -12,9 +13,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import androidx.navigation.fragment.findNavController
 import com.example.musicplayer.databinding.FragmentPlaylistBinding
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -24,26 +28,21 @@ class PlaylistFragment : Fragment() {
     private var _binding: FragmentPlaylistBinding? = null
     private val binding get() = _binding!!
 
-    // 播放器
-    private var exoPlayer: ExoPlayer? = null
+    // 🌟 关键修改：不再声明 ExoPlayer，而是声明 MediaController 用来连接 Service
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var mediaController: MediaController? = null
 
-    // 权限申请回调
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            Toast.makeText(requireContext(), "权限已授予，正在联网拉取...", Toast.LENGTH_SHORT).show()
             fetchSongData()
         } else {
-            Toast.makeText(requireContext(), "您拒绝了权限，已为您加载本地歌单", Toast.LENGTH_LONG).show()
             showLocalFallbackData("权限拒绝降级")
         }
     }
 
-    override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentPlaylistBinding.inflate(inflater, container, false)
         return binding.root
     }
@@ -51,60 +50,43 @@ class PlaylistFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // 1. 初始化 ExoPlayer
-        exoPlayer = ExoPlayer.Builder(requireContext()).build()
+        // 🌟 初始化 MediaController 连接到我们的 MusicService
+        val sessionToken = SessionToken(requireContext(), ComponentName(requireContext(), MusicService::class.java))
+        controllerFuture = MediaController.Builder(requireContext(), sessionToken).buildAsync()
 
-        // 添加错误监听器
-        exoPlayer?.addListener(object : androidx.media3.common.Player.Listener {
-            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                super.onPlayerError(error)
-                android.util.Log.e("PlayerError", "播放失败原因: ${error.message}")
-                requireActivity().runOnUiThread {
-                    Toast.makeText(requireContext(), "播放失败: ${error.cause?.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-        })
+        controllerFuture?.addListener({
+            mediaController = controllerFuture?.get()
+            Toast.makeText(requireContext(), "后台播放服务已连接", Toast.LENGTH_SHORT).show()
+        }, MoreExecutors.directExecutor())
 
-        // 2. 按钮跳转
         binding.btnGoDetail.setOnClickListener {
             findNavController().navigate(R.id.action_playlist_to_detail)
         }
 
-        // 3. 播放/暂停按钮逻辑
+        // 播放/暂停按钮逻辑（通过 MediaController 控制后台 Service）
         binding.btnPlayPause.setOnClickListener {
-            val player = exoPlayer ?: return@setOnClickListener
+            val controller = mediaController ?: return@setOnClickListener
 
-            if (player.isPlaying) {
-                player.pause()
+            if (controller.isPlaying) {
+                controller.pause()
                 Toast.makeText(requireContext(), "已暂停", Toast.LENGTH_SHORT).show()
             } else {
-                if (player.mediaItemCount == 0) {
+                if (controller.mediaItemCount == 0) {
                     val currentSong = QueueManager.getCurrentSong()
                     if (currentSong != null) {
-
-                        // 🌟 核心修改：判断是本地还是网络
-                        val mediaItem = if (currentSong.rawResId != null) {
-                            // 本地资源：用 Android 原生资源路径解析
-                            val uri = android.net.Uri.parse("android.resource://${requireContext().packageName}/${currentSong.rawResId}")
-                            MediaItem.fromUri(uri)
-                        } else {
-                            // 网络资源：直接用 url
-                            MediaItem.fromUri(currentSong.url)
-                        }
-
-                        player.setMediaItem(mediaItem)
-                        player.prepare()
+                        val mediaItem = MediaItem.fromUri(currentSong.url)
+                        controller.setMediaItem(mediaItem)
+                        controller.prepare()
                     } else {
                         Toast.makeText(requireContext(), "暂无歌曲", Toast.LENGTH_SHORT).show()
                         return@setOnClickListener
                     }
                 }
-                player.play()
+                controller.play()
                 Toast.makeText(requireContext(), "正在播放", Toast.LENGTH_SHORT).show()
             }
         }
 
-        // 4. 开始检查权限并请求网络
         checkAndRequestPermission()
     }
 
@@ -128,17 +110,11 @@ class PlaylistFragment : Fragment() {
                     if (!songList.isNullOrEmpty()) {
                         QueueManager.setQueue(songList, 0)
                         val songData = QueueManager.getCurrentSong()
-
                         if (songData != null) {
                             requireActivity().runOnUiThread {
                                 binding.tvTitle.text = "${songData.name} - ${songData.artist}"
                                 SpUtils.saveCurrentSong(requireContext(), songData.name, songData.artist, songData.pic)
                                 SpUtils.savePlayState(requireContext(), true)
-
-                                // 预先准备好播放器数据
-                                val mediaItem = MediaItem.fromUri(songData.url)
-                                exoPlayer?.setMediaItem(mediaItem)
-                                exoPlayer?.prepare()
                             }
                         }
                     } else {
@@ -150,7 +126,6 @@ class PlaylistFragment : Fragment() {
             }
 
             override fun onFailure(call: Call<List<SongData>>, t: Throwable) {
-                android.util.Log.e("NetworkTest", "网络错误：${t.message}")
                 showLocalFallbackData("网络异常降级")
             }
         })
@@ -165,23 +140,14 @@ class PlaylistFragment : Fragment() {
             }
             binding.tvFallbackList.text = stringBuilder.toString()
 
-            // 🌟 核心新增：把本地 5 首假歌塞进队列管理器
             QueueManager.setQueue(LocalDataProvider.mockSongList, 0)
-
-            // 🌟 核心新增：把第一首假歌喂给播放器准备
-            val firstLocalSong = QueueManager.getCurrentSong()
-            if (firstLocalSong != null) {
-                val mediaItem = MediaItem.fromUri(firstLocalSong.url)
-                exoPlayer?.setMediaItem(mediaItem)
-                exoPlayer?.prepare()
-            }
         }
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
-        exoPlayer?.release()
-        exoPlayer = null
+        // 🌟 释放 Controller 连接
+        controllerFuture?.let { MediaController.releaseFuture(it) }
         _binding = null
     }
 }

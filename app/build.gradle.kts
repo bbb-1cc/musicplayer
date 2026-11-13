@@ -58,4 +58,8 @@ dependencies {
     // Media3 ExoPlayer 播放器
     implementation("androidx.media3:media3-exoplayer:1.2.1")
     implementation("androidx.media3:media3-ui:1.2.1") // 暂时不用UI，但加上备用
+    // 🌟 新增 1：Media3 的 Session 模块（提供 MediaSessionService 和 MediaController）
+    implementation("androidx.media3:media3-session:1.2.1")
+    // 🌟 新增 2：Guava 库（因为 MediaController 的异步连接使用了 ListenableFuture）
+    implementation("com.google.guava:guava:31.1-android")
 }
