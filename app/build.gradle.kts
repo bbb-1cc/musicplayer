@@ -63,4 +63,6 @@ dependencies {
     // 🌟 新增 2：Guava 库（因为 MediaController 的异步连接使用了 ListenableFuture）
     implementation("com.google.guava:guava:31.1-android")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    // 图片加载库 Coil
+    implementation("io.coil-kt:coil:2.4.0")
 }
