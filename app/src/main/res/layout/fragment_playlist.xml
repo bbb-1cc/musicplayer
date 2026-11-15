@@ -22,7 +22,7 @@
         android:id="@+id/btnGoDetail"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="16dp"
         android:text="点击查看详情"
         app:layout_constraintBottom_toTopOf="@+id/btnPlayPause"
         app:layout_constraintEnd_toEndOf="parent"
@@ -35,23 +35,47 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
         android:text="播放 / 暂停"
-        app:layout_constraintBottom_toTopOf="@+id/tvFallbackList"
+        app:layout_constraintBottom_toTopOf="@+id/seekBar"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/btnGoDetail" />
+
+    <!-- 🌟 新增：进度条 -->
+    <SeekBar
+        android:id="@+id/seekBar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:layout_marginHorizontal="24dp"
+        app:layout_constraintBottom_toTopOf="@+id/tvTime"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnPlayPause" />
+
+    <!-- 🌟 新增：时间显示 -->
+    <TextView
+        android:id="@+id/tvTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="00:00 / 00:00"
+        android:textSize="14sp"
+        app:layout_constraintBottom_toTopOf="@+id/tvFallbackList"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/seekBar" />
 
     <TextView
         android:id="@+id/tvFallbackList"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="20dp"
         android:gravity="center"
+        android:lineSpacingExtra="6dp"
         android:text="暂无本地数据"
         android:textSize="16sp"
-        android:lineSpacingExtra="6dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/btnPlayPause" />
+        app:layout_constraintTop_toBottomOf="@+id/tvTime" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

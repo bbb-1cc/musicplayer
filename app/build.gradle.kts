@@ -62,4 +62,5 @@ dependencies {
     implementation("androidx.media3:media3-session:1.2.1")
     // 🌟 新增 2：Guava 库（因为 MediaController 的异步连接使用了 ListenableFuture）
     implementation("com.google.guava:guava:31.1-android")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }
