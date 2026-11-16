@@ -148,11 +148,14 @@ class PlaylistFragment : Fragment() {
 
         Toast.makeText(requireContext(), "正在播放：${song.name}", Toast.LENGTH_SHORT).show()
 
-        // 播放
+        // 让后台播放器开始干活
         val mediaItem = MediaItem.fromUri(song.url)
         controller.setMediaItem(mediaItem)
         controller.prepare()
         controller.play()
+
+        // 🌟 核心新增：点击播放后，直接跳转到详情页！
+        findNavController().navigate(R.id.action_playlist_to_detail)
     }
 
     override fun onDestroyView() {
