@@ -5,9 +5,10 @@ import retrofit2.http.GET
 import retrofit2.http.Query
 
 interface ApiService {
+    // 🌟 改成 type=playlist，id 是网易云热歌榜的 ID (3778678)
     @GET("meting/")
-    fun getRandomSong(
-        @Query("type") type: String = "song",
-        @Query("id") id: String = "1330348068" // 起风了
+    fun getPlaylist(
+        @Query("type") type: String = "playlist",
+        @Query("id") id: String = "3778678"
     ): Call<List<SongData>>
 }
