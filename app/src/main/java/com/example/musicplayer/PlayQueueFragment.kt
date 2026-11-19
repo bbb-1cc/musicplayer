@@ -1,59 +1,104 @@
 package com.example.musicplayer
 
+import android.content.ComponentName
 import android.os.Bundle
-import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
+import androidx.fragment.app.Fragment
+import androidx.media3.common.MediaItem
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.example.musicplayer.databinding.FragmentPlayQueueBinding
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 
-// TODO: Rename parameter arguments, choose names that match
-// the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
-private const val ARG_PARAM1 = "param1"
-private const val ARG_PARAM2 = "param2"
-
-/**
- * A simple [Fragment] subclass.
- * Use the [PlayQueueFragment.newInstance] factory method to
- * create an instance of this fragment.
- */
 class PlayQueueFragment : Fragment() {
-    // TODO: Rename and change types of parameters
-    private var param1: String? = null
-    private var param2: String? = null
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        arguments?.let {
-            param1 = it.getString(ARG_PARAM1)
-            param2 = it.getString(ARG_PARAM2)
-        }
-    }
+    private var _binding: FragmentPlayQueueBinding? = null
+    private val binding get() = _binding!!
+
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var mediaController: MediaController? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
-    ): View? {
-        // Inflate the layout for this fragment
-        return inflater.inflate(R.layout.fragment_play_queue, container, false)
+    ): View {
+        _binding = FragmentPlayQueueBinding.inflate(inflater, container, false)
+        return binding.root
     }
 
-    companion object {
-        /**
-         * Use this factory method to create a new instance of
-         * this fragment using the provided parameters.
-         *
-         * @param param1 Parameter 1.
-         * @param param2 Parameter 2.
-         * @return A new instance of fragment PlayQueueFragment.
-         */
-        // TODO: Rename and change types and number of parameters
-        @JvmStatic
-        fun newInstance(param1: String, param2: String) =
-            PlayQueueFragment().apply {
-                arguments = Bundle().apply {
-                    putString(ARG_PARAM1, param1)
-                    putString(ARG_PARAM2, param2)
-                }
-            }
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        // 1. 返回按钮
+        binding.ivQueueBack.setOnClickListener {
+            requireActivity().onBackPressedDispatcher.onBackPressed()
+        }
+
+        // 2. 连接后台播放服务
+        val sessionToken = SessionToken(requireContext(), ComponentName(requireContext(), MusicService::class.java))
+        controllerFuture = MediaController.Builder(requireContext(), sessionToken).buildAsync()
+        controllerFuture?.addListener({
+            mediaController = controllerFuture?.get()
+        }, MoreExecutors.directExecutor())
+
+        // 3. 渲染队列列表
+        setupQueueList()
+    }
+
+    private fun setupQueueList() {
+        // 从 QueueManager 获取当前正在播放的整个队列
+        val currentQueue = QueueManager.queue
+
+        if (currentQueue.isEmpty()) {
+            Toast.makeText(requireContext(), "当前队列为空", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 复用之前的 SongAdapter
+        val adapter = SongAdapter(currentQueue) { position ->
+            // 点击队列里的歌，立刻切歌
+            playFromQueue(position)
+        }
+
+        binding.recyclerViewQueue.layoutManager = LinearLayoutManager(requireContext())
+        binding.recyclerViewQueue.adapter = adapter
+    }
+
+    private fun playFromQueue(position: Int) {
+        val controller = mediaController
+        if (controller == null || !controller.isConnected) {
+            Toast.makeText(requireContext(), "播放器未连接", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 1. 重新设定队列，并把当前索引指到点击的那首
+        QueueManager.setQueue(QueueManager.queue, position)
+        val song = QueueManager.getCurrentSong() ?: return
+
+        // 2. 更新 SharedPreferences (通知栏和小组件需要)
+        SpUtils.saveCurrentSong(requireContext(), song.name, song.artist, song.pic)
+        SpUtils.savePlayState(requireContext(), true)
+
+        Toast.makeText(requireContext(), "切换播放：${song.name}", Toast.LENGTH_SHORT).show()
+
+        // 3. 通知后台播放
+        val mediaItem = MediaItem.fromUri(song.url)
+        controller.setMediaItem(mediaItem)
+        controller.prepare()
+        controller.play()
+
+        // 4. 切完歌自动退回上一页（可选）
+        requireActivity().onBackPressedDispatcher.onBackPressed()
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        controllerFuture?.let { MediaController.releaseFuture(it) }
+        _binding = null
     }
 }

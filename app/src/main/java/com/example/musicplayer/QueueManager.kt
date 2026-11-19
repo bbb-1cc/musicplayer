@@ -23,6 +23,22 @@ object QueueManager {
         }
     }
 
+    // 🌟 新增：提供给外部同步当前播放索引的方法（非常重要！）
+    fun setCurrentIndex(index: Int) {
+        if (index in _queue.indices) {
+            currentIndex = index
+        }
+    }
+
+    // 🌟 新增：用于同步从队列移除歌曲
+    fun removeSongAt(index: Int) {
+        if (index in _queue.indices) {
+            _queue.removeAt(index)
+            if (currentIndex >= _queue.size) currentIndex = _queue.size - 1
+            if (currentIndex < 0) currentIndex = 0
+        }
+    }
+
     /**
      * 获取当前正在播放的歌曲
      */

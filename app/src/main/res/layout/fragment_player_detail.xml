@@ -141,4 +141,30 @@
         app:layout_constraintStart_toEndOf="@+id/btnPlayDetail"
         app:layout_constraintTop_toTopOf="@+id/btnPrev" />
 
+    <!-- 🌟 左下角：爱心收藏按钮（换了新图标，离中间按钮更远） -->
+    <ImageButton
+        android:id="@+id/btnFavorite"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginTop="24dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:padding="12dp"
+        android:src="@drawable/ic_heart"
+        app:tint="#888888"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnPlayDetail" />
+
+    <!-- 🌟 右下角：播放队列按钮 -->
+    <ImageButton
+        android:id="@+id/btnQueue"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginTop="24dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:padding="12dp"
+        android:src="@android:drawable/ic_menu_sort_by_size"
+        app:tint="#888888"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnPlayDetail" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -14,7 +14,11 @@
         android:id="@+id/playerDetailFragment"
         android:name="com.example.musicplayer.PlayerDetailFragment"
         android:label="fragment_player_detail"
-        tools:layout="@layout/fragment_player_detail" />
+        tools:layout="@layout/fragment_player_detail" >
+        <action
+            android:id="@+id/action_detail_to_queue"
+            app:destination="@id/playQueueFragment" />
+    </fragment>
     <fragment
         android:id="@+id/playlistFragment"
         android:name="com.example.musicplayer.PlaylistFragment"

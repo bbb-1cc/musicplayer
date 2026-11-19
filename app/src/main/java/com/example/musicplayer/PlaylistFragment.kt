@@ -138,26 +138,41 @@ class PlaylistFragment : Fragment() {
             return
         }
 
-        // 更新队列
+        // 1. 更新自定义队列管理器
         QueueManager.setQueue(displayList, position)
         val song = QueueManager.getCurrentSong() ?: return
 
-        // 保存数据给通知栏和小组件
+        // 2. 保存数据给通知栏
         SpUtils.saveCurrentSong(requireContext(), song.name, song.artist, song.pic)
         SpUtils.savePlayState(requireContext(), true)
 
         Toast.makeText(requireContext(), "正在播放：${song.name}", Toast.LENGTH_SHORT).show()
 
-        // 让后台播放器开始干活
-        val mediaItem = MediaItem.fromUri(song.url)
-        controller.setMediaItem(mediaItem)
+        // 🌟 3. 核心修改：把整个歌单打包成 MediaItem 列表塞给播放器
+        val mediaItems = displayList.map { MediaItem.fromUri(it.url) }
+        controller.setMediaItems(mediaItems, position, 0L)
         controller.prepare()
         controller.play()
 
-        // 🌟 核心新增：点击播放后，直接跳转到详情页！
+        // 🌟 4. 监听播放器自动切歌，同步我们的队列
+        controller.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
+                super.onMediaItemTransition(mediaItem, reason)
+                // 播放器自动切歌了，同步 QueueManager 的索引
+                val newIndex = controller.currentMediaItemIndex
+                QueueManager.setQueue(displayList, newIndex)
+
+                // 更新 SP
+                val newSong = QueueManager.getCurrentSong()
+                if (newSong != null) {
+                    SpUtils.saveCurrentSong(requireContext(), newSong.name, newSong.artist, newSong.pic)
+                }
+            }
+        })
+
+        // 5. 跳转详情页
         findNavController().navigate(R.id.action_playlist_to_detail)
     }
-
     override fun onDestroyView() {
         super.onDestroyView()
         controllerFuture?.let { MediaController.releaseFuture(it) }

@@ -28,7 +28,6 @@ class PlayerDetailFragment : Fragment() {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
 
-    // 定时刷新进度条
     private val handler = Handler(Looper.getMainLooper())
     private var isUserSeeking = false
 
@@ -39,16 +38,12 @@ class PlayerDetailFragment : Fragment() {
                 try {
                     val currentPos = controller.currentPosition
                     val duration = controller.duration
-
-                    // 只有时长有效才更新 UI
                     if (duration > 0 && duration != C.TIME_UNSET) {
                         binding.seekBarDetail.max = duration.toInt()
                         binding.seekBarDetail.progress = currentPos.toInt()
                         binding.tvTimeCurrent.text = formatTime(currentPos)
                         binding.tvTimeTotal.text = formatTime(duration)
                     }
-
-                    // 动态切换红色的播放/暂停按钮图标
                     if (controller.isPlaying) {
                         binding.btnPlayDetail.setImageResource(android.R.drawable.ic_media_pause)
                     } else {
@@ -56,15 +51,11 @@ class PlayerDetailFragment : Fragment() {
                     }
                 } catch (e: Exception) {}
             }
-            // 每 500 毫秒刷新一次
             handler.postDelayed(this, 500)
         }
     }
 
-    override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentPlayerDetailBinding.inflate(inflater, container, false)
         return binding.root
     }
@@ -72,60 +63,47 @@ class PlayerDetailFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // 1. 先展示当前歌曲的静态信息（防止刚进来白屏）
-        updateSongUI()
-
-        // 2. 连接后台播放服务
         val sessionToken = SessionToken(requireContext(), ComponentName(requireContext(), MusicService::class.java))
         controllerFuture = MediaController.Builder(requireContext(), sessionToken).buildAsync()
 
         controllerFuture?.addListener({
             mediaController = controllerFuture?.get()
 
-            // 🌟 核心监听：如果在别的地方切歌了，详情页 UI 也会跟着自动变
+            // 🌟 核心修复：监听切歌，直接同步队列索引并刷新 UI
             mediaController?.addListener(object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                     super.onMediaItemTransition(mediaItem, reason)
-                    updateSongUI()
+                    val realIndex = mediaController?.currentMediaItemIndex ?: 0
+                    QueueManager.setCurrentIndex(realIndex) // 同步给队列
+                    updateUIFromPlayer() // 直接从播放器拿当前数据刷新界面
                 }
             })
 
-            // 连接成功后，开始疯狂刷新进度条
+            // 首次进入强制刷新一次（防空白）
+            updateUIFromPlayer()
             handler.post(updateProgressRunnable)
         }, MoreExecutors.directExecutor())
 
-        // 3. 返回按钮
-        binding.ivBack.setOnClickListener {
-            requireActivity().onBackPressedDispatcher.onBackPressed()
+        binding.ivBack.setOnClickListener { requireActivity().onBackPressedDispatcher.onBackPressed() }
+
+        // 🌟 改为弹出半屏 BottomSheet
+        binding.btnQueue.setOnClickListener {
+            val bottomSheet = PlayQueueBottomSheet()
+            bottomSheet.show(childFragmentManager, "PlayQueue")
         }
 
-        // 4. 大播放/暂停按钮
+        binding.btnFavorite.setOnClickListener {
+            Toast.makeText(requireContext(), "收藏功能开发中...", Toast.LENGTH_SHORT).show()
+        }
+
         binding.btnPlayDetail.setOnClickListener {
             val controller = mediaController ?: return@setOnClickListener
             if (controller.isPlaying) controller.pause() else controller.play()
         }
 
-        // 5. 上一首
-        binding.btnPrev.setOnClickListener {
-            val prevSong = QueueManager.getPreviousSong()
-            if (prevSong != null) {
-                playNewSong(prevSong)
-            } else {
-                Toast.makeText(requireContext(), "已经是第一首了", Toast.LENGTH_SHORT).show()
-            }
-        }
+        binding.btnPrev.setOnClickListener { mediaController?.seekToPreviousMediaItem() }
+        binding.btnNext.setOnClickListener { mediaController?.seekToNextMediaItem() }
 
-        // 6. 下一首
-        binding.btnNext.setOnClickListener {
-            val nextSong = QueueManager.getNextSong()
-            if (nextSong != null) {
-                playNewSong(nextSong)
-            } else {
-                Toast.makeText(requireContext(), "已经是最后一首了", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // 7. 拖动进度条跳转
         binding.seekBarDetail.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) binding.tvTimeCurrent.text = formatTime(progress.toLong())
@@ -138,44 +116,23 @@ class PlayerDetailFragment : Fragment() {
         })
     }
 
-    // 刷新页面显示的歌名、歌手、封面
-    // 刷新当前页面显示的歌名、封面
-    // 刷新当前页面显示的歌名、封面
-    private fun updateSongUI() {
+    // 🌟 直接从 QueueManager 拿数据刷新，绝对不空
+    private fun updateUIFromPlayer() {
         val currentSong = QueueManager.getCurrentSong()
-        currentSong?.let { song ->
-            binding.tvDetailSongName.text = song.name
-            binding.tvDetailArtist.text = song.artist
-
-            // 🌟 改这里：不再用网络图兜底，用系统本地图标
-            binding.ivCover.load(song.pic) {
-                crossfade(true)
-                placeholder(android.R.drawable.ic_menu_gallery) // 加载中显示的本地图
-                error(android.R.drawable.ic_menu_report_image)  // 加载失败显示的本地图
+        if (currentSong != null) {
+            binding.tvDetailSongName.text = currentSong.name
+            binding.tvDetailArtist.text = currentSong.artist
+            if (currentSong.pic.isNotEmpty()) {
+                binding.ivCover.load(currentSong.pic) {
+                    crossfade(true)
+                    error(android.R.drawable.ic_menu_report_image)
+                }
+            } else {
+                binding.ivCover.setImageResource(android.R.drawable.ic_menu_report_image)
             }
         }
     }
 
-    // 切歌执行逻辑
-    private fun playNewSong(song: SongData) {
-        binding.tvDetailSongName.text = song.name
-        binding.tvDetailArtist.text = song.artist
-
-        // 🌟 改这里：同样用本地系统图标兜底
-        binding.ivCover.load(song.pic) {
-            crossfade(true)
-            error(android.R.drawable.ic_menu_report_image)
-        }
-
-        val controller = mediaController
-        if (controller != null) {
-            val mediaItem = MediaItem.fromUri(song.url)
-            controller.setMediaItem(mediaItem)
-            controller.prepare()
-            controller.play()
-        }
-    }
-    // 格式化时间（毫秒 -> 00:00）
     private fun formatTime(millis: Long): String {
         if (millis <= 0) return "00:00"
         val seconds = (millis / 1000) % 60
@@ -185,10 +142,8 @@ class PlayerDetailFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        // 🌟 极其重要：清理 Handler，释放 Controller，防内存泄漏
         handler.removeCallbacks(updateProgressRunnable)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         _binding = null
     }
-
 }
