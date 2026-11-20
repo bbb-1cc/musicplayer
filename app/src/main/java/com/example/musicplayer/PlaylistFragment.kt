@@ -64,7 +64,11 @@ class PlaylistFragment : Fragment() {
         binding.btnGoDetail.setOnClickListener {
             findNavController().navigate(R.id.action_playlist_to_detail)
         }
-
+        // 🌟 点击齿轮图标去设置页
+        binding.ivGoSettings.setOnClickListener {
+            // 这里的 R.id.action_playlist_to_settings 需要你在 nav_graph.xml 里连好线
+            findNavController().navigate(R.id.action_playlist_to_settings)
+        }
         // 3. 检查权限（决定是走网络还是走降级）
         checkAndRequestPermission()
     }

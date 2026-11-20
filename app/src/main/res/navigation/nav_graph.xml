@@ -27,6 +27,9 @@
         <action
             android:id="@+id/action_playlist_to_detail"
             app:destination="@id/playerDetailFragment" />
+        <action
+            android:id="@+id/action_playlist_to_settings"
+            app:destination="@id/settingsFragment" />
     </fragment>
     <fragment
         android:id="@+id/settingsFragment"

@@ -31,7 +31,23 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="@id/tvTitle" />
 
+    <!-- 🌟 新增：齿轮图标，点击去设置页 -->
+
     <!-- 🌟 就是这个控件，名字叫 recyclerView -->
+
+    <ImageView
+        android:id="@+id/ivGoSettings"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginEnd="16dp"
+        android:padding="4dp"
+        android:src="@android:drawable/ic_menu_preferences"
+        app:layout_constraintBottom_toBottomOf="@+id/btnGoDetail"
+        app:layout_constraintEnd_toStartOf="@+id/btnGoDetail"
+        app:layout_constraintTop_toTopOf="@+id/btnGoDetail"
+        app:layout_constraintVertical_bias="0.0"
+        app:tint="#333333" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"
         android:layout_width="0dp"

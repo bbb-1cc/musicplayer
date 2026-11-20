@@ -12,4 +12,6 @@ interface PlayProgressDao {
 
     @Query("SELECT * FROM progress_table WHERE songUrl = :url LIMIT 1")
     suspend fun getProgressByUrl(url: String): PlayProgress?
+
+    @Query("DELETE FROM progress_table") suspend fun clearAllProgress()
 }
