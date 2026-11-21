@@ -12,6 +12,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -20,6 +21,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.musicplayer.databinding.FragmentPlaylistBinding
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -32,16 +35,15 @@ class PlaylistFragment : Fragment() {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
 
-    // 最终要展示在列表上的数据
     private var displayList = mutableListOf<SongData>()
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            fetchSongData() // 允许了，去请求网络
+            fetchSongData()
         } else {
-            showLocalFallbackData() // 拒绝了，走本地降级
+            showErrorUI("权限被拒绝")
         }
     }
 
@@ -53,30 +55,38 @@ class PlaylistFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // 1. 连接后台播放服务
+        // 连接后台播放服务
         val sessionToken = SessionToken(requireContext(), ComponentName(requireContext(), MusicService::class.java))
         controllerFuture = MediaController.Builder(requireContext(), sessionToken).buildAsync()
         controllerFuture?.addListener({
             mediaController = controllerFuture?.get()
         }, MoreExecutors.directExecutor())
 
-        // 2. 跳转详情页按钮
+        // 顶部按钮
         binding.btnGoDetail.setOnClickListener {
             findNavController().navigate(R.id.action_playlist_to_detail)
         }
-        // 🌟 点击齿轮图标去设置页
         binding.ivGoSettings.setOnClickListener {
-            // 这里的 R.id.action_playlist_to_settings 需要你在 nav_graph.xml 里连好线
-            findNavController().navigate(R.id.action_playlist_to_settings)
+            try {
+                val navController = androidx.navigation.Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
+                navController.navigate(R.id.settingsFragment)
+            } catch (e: Exception) {
+                findNavController().navigate(R.id.settingsFragment)
+            }
         }
-        // 3. 检查权限（决定是走网络还是走降级）
+
+        // 🌟 重试按钮点击
+        binding.btnRetry.setOnClickListener {
+            checkAndRequestPermission()
+        }
+
         checkAndRequestPermission()
     }
 
     private fun checkAndRequestPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                fetchSongData() // 已经有权限了，直接请求网络
+                fetchSongData()
             } else {
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
@@ -85,98 +95,106 @@ class PlaylistFragment : Fragment() {
         }
     }
 
-    // 🌟 网络请求逻辑
-    // 🌟 网络请求逻辑
+    // 🌟 核心网络请求
     private fun fetchSongData() {
-        // 注意这里调用的方法改成了 getPlaylist()
+        showLoadingUI() // 1. 先显示转圈圈
+
         RetrofitClient.apiService.getPlaylist().enqueue(object : Callback<List<SongData>> {
             override fun onResponse(call: Call<List<SongData>>, response: Response<List<SongData>>) {
                 if (response.isSuccessful) {
                     val songList = response.body()
                     if (!songList.isNullOrEmpty()) {
-                        // 🌟 直接使用网络返回的完整列表！
                         displayList.clear()
                         displayList.addAll(songList)
-
                         requireActivity().runOnUiThread {
-                            setupRecyclerView(displayList)
+                            showListUI() // 2. 成功且有数据，显示列表
                         }
                     } else {
-                        showLocalFallbackData()
+                        requireActivity().runOnUiThread { showEmptyUI() } // 3. 成功但没数据，显示空状态
                     }
                 } else {
-                    showLocalFallbackData()
+                    requireActivity().runOnUiThread { showErrorUI("服务器错误") } // 4. 失败，显示错误状态
                 }
             }
 
             override fun onFailure(call: Call<List<SongData>>, t: Throwable) {
-                showLocalFallbackData()
+                requireActivity().runOnUiThread { showErrorUI("网络异常") } // 5. 失败，显示错误状态
             }
         })
     }
 
-    // 🌟 降级兜底逻辑
-    private fun showLocalFallbackData() {
-        requireActivity().runOnUiThread {
-            Toast.makeText(requireContext(), "网络异常，已降级为本地歌单", Toast.LENGTH_SHORT).show()
-            displayList.clear()
-            displayList.addAll(LocalDataProvider.mockSongList)
-            setupRecyclerView(displayList)
-        }
-    }
-
-    // 🌟 初始化列表
-    private fun setupRecyclerView(list: List<SongData>) {
-        val adapter = SongAdapter(list) { position ->
+    private fun setupRecyclerView() {
+        val adapter = SongAdapter(displayList) { position ->
             playSong(position)
         }
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
     }
 
-    // 🌟 点击歌曲播放
     private fun playSong(position: Int) {
         val controller = mediaController
         if (controller == null || !controller.isConnected) {
-            Toast.makeText(requireContext(), "播放器连接中，请稍候...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), "播放器连接中...", Toast.LENGTH_SHORT).show()
             return
         }
 
-        // 1. 更新自定义队列管理器
         QueueManager.setQueue(displayList, position)
         val song = QueueManager.getCurrentSong() ?: return
 
-        // 2. 保存数据给通知栏
         SpUtils.saveCurrentSong(requireContext(), song.name, song.artist, song.pic)
         SpUtils.savePlayState(requireContext(), true)
 
-        Toast.makeText(requireContext(), "正在播放：${song.name}", Toast.LENGTH_SHORT).show()
-
-        // 🌟 3. 核心修改：把整个歌单打包成 MediaItem 列表塞给播放器
         val mediaItems = displayList.map { MediaItem.fromUri(it.url) }
         controller.setMediaItems(mediaItems, position, 0L)
         controller.prepare()
         controller.play()
 
-        // 🌟 4. 监听播放器自动切歌，同步我们的队列
-        controller.addListener(object : androidx.media3.common.Player.Listener {
-            override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
-                super.onMediaItemTransition(mediaItem, reason)
-                // 播放器自动切歌了，同步 QueueManager 的索引
-                val newIndex = controller.currentMediaItemIndex
-                QueueManager.setQueue(displayList, newIndex)
-
-                // 更新 SP
-                val newSong = QueueManager.getCurrentSong()
-                if (newSong != null) {
-                    SpUtils.saveCurrentSong(requireContext(), newSong.name, newSong.artist, newSong.pic)
+        // 🌟 恢复：去数据库查进度并跳转
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            val savedProgress = AppDatabase.getInstance(requireContext()).playProgressDao().getProgressByUrl(song.url)
+            requireActivity().runOnUiThread {
+                if (savedProgress != null && savedProgress.currentPosition > 0) {
+                    controller.seekTo(position, savedProgress.currentPosition)
+                    Toast.makeText(requireContext(), "已恢复上次进度", Toast.LENGTH_SHORT).show()
                 }
             }
-        })
+        }
 
-        // 5. 跳转详情页
         findNavController().navigate(R.id.action_playlist_to_detail)
     }
+
+    // ==========================================
+    // 🌟 状态切换魔法
+    // ==========================================
+    private fun showLoadingUI() {
+        binding.progressBar.visibility = View.VISIBLE
+        binding.recyclerView.visibility = View.GONE
+        binding.layoutError.visibility = View.GONE
+        binding.tvEmpty.visibility = View.GONE
+    }
+
+    private fun showListUI() {
+        binding.progressBar.visibility = View.GONE
+        binding.recyclerView.visibility = View.VISIBLE
+        binding.layoutError.visibility = View.GONE
+        binding.tvEmpty.visibility = View.GONE
+        setupRecyclerView()
+    }
+
+    private fun showErrorUI(msg: String) {
+        binding.progressBar.visibility = View.GONE
+        binding.recyclerView.visibility = View.GONE
+        binding.layoutError.visibility = View.VISIBLE
+        binding.tvEmpty.visibility = View.GONE
+    }
+
+    private fun showEmptyUI() {
+        binding.progressBar.visibility = View.GONE
+        binding.recyclerView.visibility = View.GONE
+        binding.layoutError.visibility = View.GONE
+        binding.tvEmpty.visibility = View.VISIBLE
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
         controllerFuture?.let { MediaController.releaseFuture(it) }

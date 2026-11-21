@@ -31,23 +31,19 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="@id/tvTitle" />
 
-    <!-- 🌟 新增：齿轮图标，点击去设置页 -->
-
-    <!-- 🌟 就是这个控件，名字叫 recyclerView -->
-
     <ImageView
         android:id="@+id/ivGoSettings"
-        android:layout_width="32dp"
-        android:layout_height="32dp"
-        android:layout_marginEnd="16dp"
-        android:padding="4dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:padding="8dp"
         android:src="@android:drawable/ic_menu_preferences"
+        app:tint="#333333"
         app:layout_constraintBottom_toBottomOf="@+id/btnGoDetail"
         app:layout_constraintEnd_toStartOf="@+id/btnGoDetail"
         app:layout_constraintTop_toTopOf="@+id/btnGoDetail"
-        app:layout_constraintVertical_bias="0.0"
-        app:tint="#333333" />
+        android:layout_marginEnd="16dp" />
 
+    <!-- 列表（正常状态） -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"
         android:layout_width="0dp"
@@ -58,4 +54,59 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tvTitle" />
+
+    <!-- 🌟 1. 加载中状态（转圈圈） -->
+    <ProgressBar
+        android:id="@+id/progressBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- 🌟 2. 错误状态（断网/请求失败） -->
+    <LinearLayout
+        android:id="@+id/layoutError"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="网络开小差了~"
+            android:textColor="#888888"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/btnRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="#E53935"
+            android:text="点击重试" />
+    </LinearLayout>
+
+    <!-- 🌟 3. 空状态（没数据） -->
+    <TextView
+        android:id="@+id/tvEmpty"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="暂无歌曲数据"
+        android:textColor="#888888"
+        android:textSize="16sp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>
