@@ -143,7 +143,19 @@ class PlaylistFragment : Fragment() {
         SpUtils.saveCurrentSong(requireContext(), song.name, song.artist, song.pic)
         SpUtils.savePlayState(requireContext(), true)
 
-        val mediaItems = displayList.map { MediaItem.fromUri(it.url) }
+        // 🌟 核心修改：为每首歌构建完整的元数据
+        val mediaItems = displayList.map {
+            MediaItem.Builder()
+                .setUri(it.url)
+                .setMediaMetadata(
+                    androidx.media3.common.MediaMetadata.Builder()
+                        .setTitle(it.name)
+                        .setArtist(it.artist)
+                        .setArtworkUri(android.net.Uri.parse(it.pic)) // 封面图网址
+                        .build()
+                )
+                .build()
+        }
         controller.setMediaItems(mediaItems, position, 0L)
         controller.prepare()
         controller.play()
