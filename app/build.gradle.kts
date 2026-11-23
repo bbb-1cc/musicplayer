@@ -67,4 +67,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     // 图片加载库 Coil
     implementation("io.coil-kt:coil:2.4.0")
+    // ViewModel 和 协程生命周期支持
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
 }

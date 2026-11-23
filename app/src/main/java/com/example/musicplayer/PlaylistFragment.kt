@@ -12,6 +12,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.session.MediaController
@@ -23,14 +24,14 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import retrofit2.Call
-import retrofit2.Callback
-import retrofit2.Response
 
 class PlaylistFragment : Fragment() {
 
     private var _binding: FragmentPlaylistBinding? = null
     private val binding get() = _binding!!
+
+    // 🌟 使用委托获取 ViewModel
+    private val viewModel: PlaylistViewModel by viewModels()
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -41,7 +42,7 @@ class PlaylistFragment : Fragment() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            fetchSongData()
+            viewModel.fetchPlaylist()
         } else {
             showErrorUI("权限被拒绝")
         }
@@ -55,14 +56,22 @@ class PlaylistFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // 连接后台播放服务
+        setupMediaController()
+        setupListeners()
+
+        // 🌟 观察 ViewModel 的数据变化
+        observeViewModel()
+    }
+
+    private fun setupMediaController() {
         val sessionToken = SessionToken(requireContext(), ComponentName(requireContext(), MusicService::class.java))
         controllerFuture = MediaController.Builder(requireContext(), sessionToken).buildAsync()
         controllerFuture?.addListener({
             mediaController = controllerFuture?.get()
         }, MoreExecutors.directExecutor())
+    }
 
-        // 顶部按钮
+    private fun setupListeners() {
         binding.btnGoDetail.setOnClickListener {
             findNavController().navigate(R.id.action_playlist_to_detail)
         }
@@ -74,53 +83,43 @@ class PlaylistFragment : Fragment() {
                 findNavController().navigate(R.id.settingsFragment)
             }
         }
-
-        // 🌟 重试按钮点击
         binding.btnRetry.setOnClickListener {
             checkAndRequestPermission()
         }
-
         checkAndRequestPermission()
+    }
+
+    // 🌟 核心重构：监听 ViewModel 的状态，自动切换 UI
+    private fun observeViewModel() {
+        viewModel.isLoading.observe(viewLifecycleOwner) { isLoading ->
+            if (isLoading) showLoadingUI()
+        }
+
+        viewModel.songList.observe(viewLifecycleOwner) { songs ->
+            if (!songs.isNullOrEmpty()) {
+                displayList.clear()
+                displayList.addAll(songs)
+                showListUI()
+            }
+        }
+
+        viewModel.errorMsg.observe(viewLifecycleOwner) { error ->
+            if (!error.isNullOrEmpty()) {
+                showErrorUI(error)
+            }
+        }
     }
 
     private fun checkAndRequestPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                fetchSongData()
+                viewModel.fetchPlaylist()
             } else {
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         } else {
-            fetchSongData()
+            viewModel.fetchPlaylist()
         }
-    }
-
-    // 🌟 核心网络请求
-    private fun fetchSongData() {
-        showLoadingUI() // 1. 先显示转圈圈
-
-        RetrofitClient.apiService.getPlaylist().enqueue(object : Callback<List<SongData>> {
-            override fun onResponse(call: Call<List<SongData>>, response: Response<List<SongData>>) {
-                if (response.isSuccessful) {
-                    val songList = response.body()
-                    if (!songList.isNullOrEmpty()) {
-                        displayList.clear()
-                        displayList.addAll(songList)
-                        requireActivity().runOnUiThread {
-                            showListUI() // 2. 成功且有数据，显示列表
-                        }
-                    } else {
-                        requireActivity().runOnUiThread { showEmptyUI() } // 3. 成功但没数据，显示空状态
-                    }
-                } else {
-                    requireActivity().runOnUiThread { showErrorUI("服务器错误") } // 4. 失败，显示错误状态
-                }
-            }
-
-            override fun onFailure(call: Call<List<SongData>>, t: Throwable) {
-                requireActivity().runOnUiThread { showErrorUI("网络异常") } // 5. 失败，显示错误状态
-            }
-        })
     }
 
     private fun setupRecyclerView() {
@@ -149,7 +148,6 @@ class PlaylistFragment : Fragment() {
         controller.prepare()
         controller.play()
 
-        // 🌟 恢复：去数据库查进度并跳转
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             val savedProgress = AppDatabase.getInstance(requireContext()).playProgressDao().getProgressByUrl(song.url)
             requireActivity().runOnUiThread {
@@ -163,9 +161,7 @@ class PlaylistFragment : Fragment() {
         findNavController().navigate(R.id.action_playlist_to_detail)
     }
 
-    // ==========================================
-    // 🌟 状态切换魔法
-    // ==========================================
+    // ================= 状态切换 =================
     private fun showLoadingUI() {
         binding.progressBar.visibility = View.VISIBLE
         binding.recyclerView.visibility = View.GONE
@@ -186,13 +182,6 @@ class PlaylistFragment : Fragment() {
         binding.recyclerView.visibility = View.GONE
         binding.layoutError.visibility = View.VISIBLE
         binding.tvEmpty.visibility = View.GONE
-    }
-
-    private fun showEmptyUI() {
-        binding.progressBar.visibility = View.GONE
-        binding.recyclerView.visibility = View.GONE
-        binding.layoutError.visibility = View.GONE
-        binding.tvEmpty.visibility = View.VISIBLE
     }
 
     override fun onDestroyView() {
