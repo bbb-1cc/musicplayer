@@ -160,6 +160,12 @@ class PlaylistFragment : Fragment() {
         controller.prepare()
         controller.play()
 
+        // 🌟 通知小组件立刻刷新 UI
+        val updateIntent = android.content.Intent(MusicWidgetProvider.ACTION_WIDGET_UPDATE).apply {
+            setPackage(requireContext().packageName)
+        }
+        requireContext().sendBroadcast(updateIntent)
+
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             val savedProgress = AppDatabase.getInstance(requireContext()).playProgressDao().getProgressByUrl(song.url)
             requireActivity().runOnUiThread {

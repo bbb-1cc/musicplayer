@@ -70,4 +70,7 @@ dependencies {
     // ViewModel 和 协程生命周期支持
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    // 小组件加载网络图片专用
+    implementation("com.github.bumptech.glide:glide:4.16.0")
+    ksp("com.github.bumptech.glide:ksp:4.16.0")
 }

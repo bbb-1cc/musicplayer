@@ -27,6 +27,19 @@
             </intent-filter>
         </activity>
 
+        <!-- 🌟 注册桌面小组件 -->
+        <receiver
+            android:name=".MusicWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="ACTION_WIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info" />
+        </receiver>
+
         <!-- 🌟 注意：service 必须和 activity 平级，放在 activity 的外面 -->
         <service
             android:name=".MusicService"
