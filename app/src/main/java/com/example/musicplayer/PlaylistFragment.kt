@@ -15,10 +15,12 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
+import coil.load
 import com.example.musicplayer.databinding.FragmentPlaylistBinding
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
@@ -30,9 +32,7 @@ class PlaylistFragment : Fragment() {
     private var _binding: FragmentPlaylistBinding? = null
     private val binding get() = _binding!!
 
-    // 🌟 使用委托获取 ViewModel
     private val viewModel: PlaylistViewModel by viewModels()
-
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
 
@@ -41,11 +41,7 @@ class PlaylistFragment : Fragment() {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
-        if (isGranted) {
-            viewModel.fetchPlaylist()
-        } else {
-            showErrorUI("权限被拒绝")
-        }
+        if (isGranted) viewModel.fetchPlaylist() else showErrorUI("权限被拒绝")
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -55,11 +51,8 @@ class PlaylistFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
         setupMediaController()
         setupListeners()
-
-        // 🌟 观察 ViewModel 的数据变化
         observeViewModel()
     }
 
@@ -68,36 +61,80 @@ class PlaylistFragment : Fragment() {
         controllerFuture = MediaController.Builder(requireContext(), sessionToken).buildAsync()
         controllerFuture?.addListener({
             mediaController = controllerFuture?.get()
+            mediaController?.addListener(object : Player.Listener {
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { updateMiniPlayerUI() }
+                override fun onIsPlayingChanged(isPlaying: Boolean) { updateMiniPlayerUI() }
+            })
+            restoreLastSongFromSp()
         }, MoreExecutors.directExecutor())
     }
 
-    private fun setupListeners() {
-        binding.btnGoDetail.setOnClickListener {
-            findNavController().navigate(R.id.action_playlist_to_detail)
-        }
-        binding.ivGoSettings.setOnClickListener {
-            try {
-                val navController = androidx.navigation.Navigation.findNavController(requireActivity(), R.id.nav_host_fragment)
-                navController.navigate(R.id.settingsFragment)
-            } catch (e: Exception) {
-                findNavController().navigate(R.id.settingsFragment)
+    private fun restoreLastSongFromSp() {
+        val lastSongUrl = SpUtils.getSongUrl(requireContext())
+        if (lastSongUrl.isNotEmpty()) {
+            if (QueueManager.queue.isEmpty()) {
+                val lastSong = SongData(SpUtils.getSongName(requireContext()), SpUtils.getArtist(requireContext()), lastSongUrl, SpUtils.getPicUrl(requireContext()))
+                QueueManager.setQueue(listOf(lastSong), 0)
             }
+            updateMiniPlayerUI()
         }
-        binding.btnRetry.setOnClickListener {
-            checkAndRequestPermission()
+    }
+
+    private fun updateMiniPlayerUI() {
+        val controller = mediaController
+        val currentSong = QueueManager.getCurrentSong()
+
+        if (currentSong != null) {
+            binding.cardMiniPlayer.visibility = View.VISIBLE
+            binding.tvMiniSongName.text = currentSong.name
+            binding.tvMiniArtist.text = currentSong.artist
+            if (currentSong.pic.isNotEmpty()) binding.ivMiniCover.load(currentSong.pic) { crossfade(true) }
+            else binding.ivMiniCover.setImageResource(android.R.drawable.ic_menu_gallery)
+
+            val isPlaying = controller?.isPlaying ?: false
+            binding.btnMiniPlayPause.setImageResource(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play)
+        } else {
+            binding.cardMiniPlayer.visibility = View.GONE
         }
-        binding.ivGoFavorite.setOnClickListener {
-            findNavController().navigate(R.id.action_playlist_to_favorite)
+    }
+
+    private fun setupListeners() {
+        binding.ivGoSettings.setOnClickListener { findNavController().navigate(R.id.settingsFragment) }
+        binding.ivGoFavorite.setOnClickListener { findNavController().navigate(R.id.action_playlist_to_favorite) }
+        binding.btnRetry.setOnClickListener { checkAndRequestPermission() }
+        binding.cardMiniPlayer.setOnClickListener { findNavController().navigate(R.id.action_playlist_to_detail) }
+
+        binding.btnMiniPlayPause.setOnClickListener {
+            val controller = mediaController ?: return@setOnClickListener
+            val currentSong = QueueManager.getCurrentSong() ?: return@setOnClickListener
+
+            if (controller.isPlaying) {
+                controller.pause()
+            } else {
+                if (controller.mediaItemCount == 0) {
+                    viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                        val savedProgress = AppDatabase.getInstance(requireContext()).playProgressDao().getProgressByUrl(currentSong.url)
+                        val startPosition = savedProgress?.currentPosition ?: 0L
+                        requireActivity().runOnUiThread {
+                            val mediaItem = MediaItem.Builder().setUri(currentSong.url).setMediaMetadata(
+                                androidx.media3.common.MediaMetadata.Builder().setTitle(currentSong.name).setArtist(currentSong.artist).setArtworkUri(android.net.Uri.parse(currentSong.pic)).build()
+                            ).build()
+                            controller.setMediaItem(mediaItem)
+                            controller.prepare()
+                            controller.seekTo(startPosition)
+                            controller.play()
+                        }
+                    }
+                } else {
+                    controller.play()
+                }
+            }
         }
         checkAndRequestPermission()
     }
 
-    // 🌟 核心重构：监听 ViewModel 的状态，自动切换 UI
     private fun observeViewModel() {
-        viewModel.isLoading.observe(viewLifecycleOwner) { isLoading ->
-            if (isLoading) showLoadingUI()
-        }
-
+        viewModel.isLoading.observe(viewLifecycleOwner) { if (it) showLoadingUI() }
         viewModel.songList.observe(viewLifecycleOwner) { songs ->
             if (!songs.isNullOrEmpty()) {
                 displayList.clear()
@@ -105,111 +142,62 @@ class PlaylistFragment : Fragment() {
                 showListUI()
             }
         }
-
-        viewModel.errorMsg.observe(viewLifecycleOwner) { error ->
-            if (!error.isNullOrEmpty()) {
-                showErrorUI(error)
-            }
-        }
+        viewModel.errorMsg.observe(viewLifecycleOwner) { if (!it.isNullOrEmpty()) showErrorUI(it) }
     }
 
     private fun checkAndRequestPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                viewModel.fetchPlaylist()
-            } else {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        } else {
-            viewModel.fetchPlaylist()
-        }
+            if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) viewModel.fetchPlaylist()
+            else requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else viewModel.fetchPlaylist()
     }
 
     private fun setupRecyclerView() {
-        val adapter = SongAdapter(displayList) { position ->
-            playSong(position)
-        }
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        binding.recyclerView.adapter = adapter
+        binding.recyclerView.adapter = SongAdapter(displayList) { position -> playSong(position) }
     }
 
     private fun playSong(position: Int) {
         val controller = mediaController
-        if (controller == null || !controller.isConnected) {
-            Toast.makeText(requireContext(), "播放器连接中...", Toast.LENGTH_SHORT).show()
-            return
-        }
+        if (controller == null || !controller.isConnected) return
 
-        // 🌟 核心新增：如果点的是当前正在播放的歌，直接跳详情页，不打断音乐！
-        if (controller.currentMediaItemIndex == position && controller.isPlaying) {
+        val clickedSong = displayList[position]
+        val currentPlayingUrl = controller.currentMediaItem?.localConfiguration?.uri?.toString()
+
+        if (currentPlayingUrl == clickedSong.url) {
             findNavController().navigate(R.id.action_playlist_to_detail)
-            return // 直接结束，下面的重播逻辑都不执行
+            return
         }
 
         QueueManager.setQueue(displayList, position)
         val song = QueueManager.getCurrentSong() ?: return
 
-        SpUtils.saveCurrentSong(requireContext(), song.name, song.artist, song.pic)
+        SpUtils.saveCurrentSong(requireContext(), song.name, song.artist, song.pic, song.url)
         SpUtils.savePlayState(requireContext(), true)
 
-        // 🌟 核心修改：为每首歌构建完整的元数据
         val mediaItems = displayList.map {
-            MediaItem.Builder()
-                .setUri(it.url)
-                .setMediaMetadata(
-                    androidx.media3.common.MediaMetadata.Builder()
-                        .setTitle(it.name)
-                        .setArtist(it.artist)
-                        .setArtworkUri(android.net.Uri.parse(it.pic)) // 封面图网址
-                        .build()
-                )
-                .build()
+            MediaItem.Builder().setUri(it.url).setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setTitle(it.name).setArtist(it.artist).setArtworkUri(android.net.Uri.parse(it.pic)).build()
+            ).build()
         }
-        controller.setMediaItems(mediaItems, position, 0L)
-        controller.prepare()
-        controller.play()
 
-        // 🌟 通知小组件立刻刷新 UI
-        val updateIntent = android.content.Intent(MusicWidgetProvider.ACTION_WIDGET_UPDATE).apply {
-            setPackage(requireContext().packageName)
-        }
-        requireContext().sendBroadcast(updateIntent)
-
-        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+        requireActivity().lifecycleScope.launch(Dispatchers.IO) {
             val savedProgress = AppDatabase.getInstance(requireContext()).playProgressDao().getProgressByUrl(song.url)
+            val startPosition = savedProgress?.currentPosition ?: 0L
+
             requireActivity().runOnUiThread {
-                if (savedProgress != null && savedProgress.currentPosition > 0) {
-                    controller.seekTo(position, savedProgress.currentPosition)
-                    Toast.makeText(requireContext(), "已恢复上次进度", Toast.LENGTH_SHORT).show()
-                }
+                controller.setMediaItems(mediaItems, position, startPosition)
+                controller.prepare()
+                controller.play()
+                if (startPosition > 0) Toast.makeText(requireContext(), "已恢复上次进度: ${startPosition/1000}秒", Toast.LENGTH_SHORT).show()
+                findNavController().navigate(R.id.action_playlist_to_detail)
             }
         }
-
-        findNavController().navigate(R.id.action_playlist_to_detail)
     }
 
-    // ================= 状态切换 =================
-    private fun showLoadingUI() {
-        binding.progressBar.visibility = View.VISIBLE
-        binding.recyclerView.visibility = View.GONE
-        binding.layoutError.visibility = View.GONE
-        binding.tvEmpty.visibility = View.GONE
-    }
-
-    private fun showListUI() {
-        binding.progressBar.visibility = View.GONE
-        binding.recyclerView.visibility = View.VISIBLE
-        binding.layoutError.visibility = View.GONE
-        binding.tvEmpty.visibility = View.GONE
-        setupRecyclerView()
-    }
-
-    private fun showErrorUI(msg: String) {
-        binding.progressBar.visibility = View.GONE
-        binding.recyclerView.visibility = View.GONE
-        binding.layoutError.visibility = View.VISIBLE
-        binding.tvEmpty.visibility = View.GONE
-    }
+    private fun showLoadingUI() { binding.progressBar.visibility = View.VISIBLE; binding.recyclerView.visibility = View.GONE; binding.layoutError.visibility = View.GONE }
+    private fun showListUI() { binding.progressBar.visibility = View.GONE; binding.recyclerView.visibility = View.VISIBLE; binding.layoutError.visibility = View.GONE; setupRecyclerView() }
+    private fun showErrorUI(msg: String) { binding.progressBar.visibility = View.GONE; binding.recyclerView.visibility = View.GONE; binding.layoutError.visibility = View.VISIBLE }
 
     override fun onDestroyView() {
         super.onDestroyView()
