@@ -1,6 +1,7 @@
 package com.example.musicplayer
 
 import android.content.ComponentName
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -10,15 +11,19 @@ import android.view.ViewGroup
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import androidx.navigation.fragment.findNavController
 import coil.load
 import com.example.musicplayer.databinding.FragmentPlayerDetailBinding
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class PlayerDetailFragment : Fragment() {
 
@@ -30,6 +35,9 @@ class PlayerDetailFragment : Fragment() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var isUserSeeking = false
+
+    // 🌟 记录当前这首歌是否已被收藏
+    private var isCurrentFavorite = false
 
     private val updateProgressRunnable = object : Runnable {
         override fun run() {
@@ -55,7 +63,10 @@ class PlayerDetailFragment : Fragment() {
         }
     }
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View {
         _binding = FragmentPlayerDetailBinding.inflate(inflater, container, false)
         return binding.root
     }
@@ -69,31 +80,54 @@ class PlayerDetailFragment : Fragment() {
         controllerFuture?.addListener({
             mediaController = controllerFuture?.get()
 
-            // 🌟 核心修复：监听切歌，直接同步队列索引并刷新 UI
             mediaController?.addListener(object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                     super.onMediaItemTransition(mediaItem, reason)
                     val realIndex = mediaController?.currentMediaItemIndex ?: 0
-                    QueueManager.setCurrentIndex(realIndex) // 同步给队列
-                    updateUIFromPlayer() // 直接从播放器拿当前数据刷新界面
+                    QueueManager.setCurrentIndex(realIndex)
+                    updateUIFromPlayer()
                 }
             })
 
-            // 首次进入强制刷新一次（防空白）
             updateUIFromPlayer()
             handler.post(updateProgressRunnable)
         }, MoreExecutors.directExecutor())
 
         binding.ivBack.setOnClickListener { requireActivity().onBackPressedDispatcher.onBackPressed() }
 
-        // 🌟 改为弹出半屏 BottomSheet
         binding.btnQueue.setOnClickListener {
             val bottomSheet = PlayQueueBottomSheet()
             bottomSheet.show(childFragmentManager, "PlayQueue")
         }
 
+        // 🌟 核心：爱心点击事件
         binding.btnFavorite.setOnClickListener {
-            Toast.makeText(requireContext(), "收藏功能开发中...", Toast.LENGTH_SHORT).show()
+            val currentSong = QueueManager.getCurrentSong() ?: return@setOnClickListener
+
+            lifecycleScope.launch(Dispatchers.IO) {
+                if (isCurrentFavorite) {
+                    // 已经收藏了，点击就取消
+                    AppDatabase.getInstance(requireContext()).songDao().removeFavorite(currentSong.url)
+                } else {
+                    // 没收藏，点击就存入数据库
+                    val songEntity = SongEntity(
+                        url = currentSong.url,
+                        name = currentSong.name,
+                        artist = currentSong.artist,
+                        pic = currentSong.pic,
+                        isFavorite = true
+                    )
+                    AppDatabase.getInstance(requireContext()).songDao().insertSong(songEntity)
+                }
+
+                // 切回主线程更新 UI 状态
+                requireActivity().runOnUiThread {
+                    isCurrentFavorite = !isCurrentFavorite
+                    updateFavoriteIcon(isCurrentFavorite)
+                    val msg = if (isCurrentFavorite) "已加入收藏" else "已取消收藏"
+                    Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+                }
+            }
         }
 
         binding.btnPlayDetail.setOnClickListener {
@@ -116,7 +150,7 @@ class PlayerDetailFragment : Fragment() {
         })
     }
 
-    // 🌟 直接从 QueueManager 拿数据刷新，绝对不空
+    // 🌟 更新界面信息，并去数据库查询当前歌曲的收藏状态
     private fun updateUIFromPlayer() {
         val currentSong = QueueManager.getCurrentSong()
         if (currentSong != null) {
@@ -130,6 +164,27 @@ class PlayerDetailFragment : Fragment() {
             } else {
                 binding.ivCover.setImageResource(android.R.drawable.ic_menu_report_image)
             }
+
+            // 开启协程查数据库
+            lifecycleScope.launch(Dispatchers.IO) {
+                val favoriteSong = AppDatabase.getInstance(requireContext()).songDao().getSongByUrl(currentSong.url)
+                val isFav = favoriteSong != null
+                requireActivity().runOnUiThread {
+                    isCurrentFavorite = isFav
+                    updateFavoriteIcon(isFav)
+                }
+            }
+        }
+    }
+
+    // 🌟 改变爱心颜色
+    private fun updateFavoriteIcon(isFav: Boolean) {
+        if (isFav) {
+            // 已收藏，变成亮红色
+            binding.btnFavorite.setColorFilter(Color.parseColor("#E53935"))
+        } else {
+            // 未收藏，变成灰色
+            binding.btnFavorite.setColorFilter(Color.parseColor("#888888"))
         }
     }
 

@@ -30,10 +30,21 @@
         <action
             android:id="@+id/action_playlist_to_settings"
             app:destination="@id/settingsFragment" />
+        <action
+            android:id="@+id/action_playlist_to_favorite"
+            app:destination="@id/favoriteFragment" />
     </fragment>
     <fragment
         android:id="@+id/settingsFragment"
         android:name="com.example.musicplayer.SettingsFragment"
         android:label="fragment_settings"
         tools:layout="@layout/fragment_settings" />
+    <fragment
+        android:id="@+id/favoriteFragment"
+        android:name="com.example.musicplayer.FavoriteFragment"
+        android:label="FavoriteFragment" >
+        <action
+            android:id="@+id/action_favorite_to_detail"
+            app:destination="@id/playerDetailFragment" />
+    </fragment>
 </navigation>

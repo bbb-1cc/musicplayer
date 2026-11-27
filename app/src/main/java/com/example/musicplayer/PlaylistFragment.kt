@@ -86,6 +86,9 @@ class PlaylistFragment : Fragment() {
         binding.btnRetry.setOnClickListener {
             checkAndRequestPermission()
         }
+        binding.ivGoFavorite.setOnClickListener {
+            findNavController().navigate(R.id.action_playlist_to_favorite)
+        }
         checkAndRequestPermission()
     }
 
@@ -135,6 +138,12 @@ class PlaylistFragment : Fragment() {
         if (controller == null || !controller.isConnected) {
             Toast.makeText(requireContext(), "播放器连接中...", Toast.LENGTH_SHORT).show()
             return
+        }
+
+        // 🌟 核心新增：如果点的是当前正在播放的歌，直接跳详情页，不打断音乐！
+        if (controller.currentMediaItemIndex == position && controller.isPlaying) {
+            findNavController().navigate(R.id.action_playlist_to_detail)
+            return // 直接结束，下面的重播逻辑都不执行
         }
 
         QueueManager.setQueue(displayList, position)

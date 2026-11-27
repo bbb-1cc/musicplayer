@@ -31,6 +31,19 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="@id/tvTitle" />
 
+    <!-- 我的收藏入口 -->
+    <ImageView
+        android:id="@+id/ivGoFavorite"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:padding="10dp"
+        android:src="@drawable/ic_heart"
+        app:tint="#E53935"
+        app:layout_constraintBottom_toBottomOf="@+id/btnGoDetail"
+        app:layout_constraintEnd_toStartOf="@+id/ivGoSettings"
+        app:layout_constraintTop_toTopOf="@+id/btnGoDetail"
+        android:layout_marginEnd="8dp" />
+
     <ImageView
         android:id="@+id/ivGoSettings"
         android:layout_width="48dp"
